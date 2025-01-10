@@ -1,0 +1,444 @@
+/*  Elevator control program
+	global registers:
+	r20 direction of motors - inferred from current/wanted floor logic -> lego init call takes r20 as the parameter
+	r21 push button value
+	r22 floor now
+	r23 timer snapshot remaining value -> timer call takes r4 as the parameter
+	*/
+
+
+#define constants for interrupts
+.equ ADDR_JP1, 0xFF200060   # Address GPIO JP1
+#.equ stackP, 0x80000000     #the stack address
+.equ TIMER_0_BASE, 0xFF202000  #all the timer addresses
+#.equ  TIMER0_STATUS,    0
+#.equ  TIMER0_CONTROL,   4
+#.equ  TIMER0_PERIODL,   8
+#.equ  TIMER0_PERIODH,   12
+#.equ  TIMER0_SNAPL,     16
+#.equ  TIMER0_SNAPH,     20
+#.equ  TICKSPERSEC,      100000
+.equ PUSH_BUTTONS_BASE, 0xFF200050
+.equ SECOND, 0x50000000
+.equ TWO_SECONDS, 0x100000000
+
+.equ ADDR_JP1_IRQ, 0x800
+
+
+#interrupt routine
+	.section .exceptions, "ax"
+myISR:
+	addi	sp, sp, -104
+	stw		ea, 0(sp)
+	stw		et, 4(sp)
+	rdctl	et, ctl1
+	stw		et, 8(sp)
+	
+	stw		r2, 12(sp)
+	stw		r3, 16(sp)
+	stw		r4, 20(sp)
+	stw		r5, 24(sp)
+	stw		r6, 28(sp)
+	stw		r7, 32(sp)
+	stw		r8, 36(sp)
+	stw		r9, 40(sp)
+	stw		r10, 44(sp)
+	stw		r11, 48(sp)
+	stw		r12, 52(sp)
+	stw		r13, 56(sp)
+	stw		r14, 60(sp)
+	stw		r15, 64(sp)
+	stw		ra, 68(sp)
+	stw		r16, 72(sp)
+	stw		r17, 76(sp)
+	stw		r18, 80(sp)
+	stw		r19, 84(sp)
+	stw		r20, 88(sp)
+	stw		r21, 92(sp)
+	stw		r22, 96(sp)
+	stw		r23, 100(sp)
+	
+	#check which interrupt
+	rdctl	r16, ctl4
+	andi	r16, r16, 0x1	#check for IRQ0, paramount priority, timer
+	bne		r16, r0, TIMER_0_ISR
+	
+	rdctl	r16, ctl4
+	andi	r16, r16, 0x2	#check for IRQ1, PUSH_BUTTONS
+	bne		r16, r0, PUSH_BUTTONS_ISR
+	
+	rdctl	r16, ctl4
+	andi	r16, r16, 0x400	#check for IRQ 11, GPIO 1
+	bne		r16, r0, GPIO_1_ISR
+	
+	br		END_ISR	#will never happen
+	
+TIMER_0_ISR:
+   #Reading the current value of the timer into R23
+	addi sp, sp, -4
+	stw ra, 104(sp)	2
+	
+	call CHECK_TIMER_SNAPSHOT
+	
+    ldw ra, 104(sp)	
+	addi sp, sp, 4
+	
+    beq r23, r0, TIMER_0_ISR_CLEAN #updates floor
+	br TIMER_0_ISR_SAFETY_TRIG #updates floor
+    br TIMER_0_ISR_END
+	
+PUSH_BUTTONS_ISR:
+    #Reading the current value of the timer into R23
+	addi sp, sp, -4
+	stw ra, 104(sp)	2
+	
+	call CHECK_TIMER_SNAPSHOT
+	
+    ldw ra, 104(sp)	
+	addi sp, sp, 4
+	
+	#if snapshot has value go to safety
+	bne r23, r0, safety
+	
+	#which push button
+	movia r2,PUSH_BUTTONS_BASE
+    ldwio r3,(r2)   # Read in buttons - active high
+	andi r3, r3, 0x1
+	movi r1,1
+	br r3,r1, PB_ONE
+	andi r3, r3, 0x2
+	movi r1,1
+	br r3,r1, PB_TWO
+	andi r3, r3, 0x4
+	movi r1,1
+	br r3,r1, PB_THREE
+	
+safety:
+	andi r3, 0x8
+	movi r1,1
+	br r3,r1, PB_FOUR
+	
+PB_ONE:
+	sub r22, r22, r3
+	beq r22, r0, PUSH_BUTTONS_ISR_END	#=0
+	
+	movi r1, -1
+	beq r22, r1, FF1	#=1
+	
+	movi r1, -2
+	beq r22, r1, FF2	#=2
+	
+	movi r1, 1
+	beq r22, r1, BW1	#=-1
+	
+	movi r1, 2
+	beq r22, r1, BW2	#=0
+	
+	#br continue_PB_ISR
+	
+PB_TWO:
+	srli   r3,  r3, 1
+	sub r22, r22, r3
+	beq r22, r0, PUSH_BUTTONS_ISR_END
+	
+	movi r1, -1
+	beq r22, r1, FF1	#=1
+	
+	movi r1, -2
+	beq r22, r1, FF2	#=2
+	
+	movi r1, 1
+	beq r22, r1, BW1	#=-1
+	
+	movi r1, 2
+	beq r22, r1, BW2	#=0
+	
+	#br continue_PB_ISR
+	
+PB_THREE:
+	srli   r3,  r3, 2
+	sub r22, r22, r3
+	beq r22, r0, PUSH_BUTTONS_ISR_END
+	
+	movi r1, -1
+	beq r22, r1, FF1	#=1
+	
+	movi r1, -2
+	beq r22, r1, FF2	#=2
+	
+	movi r1, 1
+	beq r22, r1, BW1	#=-1
+	
+	movi r1, 2
+	beq r22, r1, BW2	#=0
+	
+	#br continue_PB_ISR
+
+PB_FOUR:#safety
+	beq r23, r0, PUSH_BUTTONS_ISR_END #-> exited cleanly, do nothing
+	
+	mov r4, r23	#-> load timer with remaining
+
+FF1:
+	#set up r20 for motor direction and movement
+	#set up r4 for timer , ie how long
+	movia r20, 0xFFDEABF0       # motor0 enabled (bit0=0), direction set to forward (bit1=0)
+	movia r4, SECOND
+	
+	br continue_PB_ISR
+	
+FF2:
+	movia r20, 0xFFDEABF0       # motor0 enabled (bit0=0), direction set to forward (bit1=0)
+	movia r4, TWO_SECONDS
+	
+	br continue_PB_ISR
+	
+BW1:
+	movia r20, 0xFFDEABFA
+	movia r4, SECOND
+	
+	br continue_PB_ISR
+	
+BW2:
+	movia r20, 0xFFDEABFA
+	movia r4, TWO_SECONDS
+
+	
+continue_PB_ISR:
+	#start moving and enable safety features
+	addi sp, sp, -4
+	stw ra, 104(sp)	2
+	
+	call LEGO_INIT_ISR
+	
+    ldw ra, 104(sp)	
+	addi sp, sp, 4
+
+	#need to load r4 with apporpriate countdown value inferred from the current/needed floor logic
+	addi sp, sp, -4
+	stw ra, 104(sp)	2
+	call	TIMER_INIT_ISR
+	ldw ra, 104(sp)	
+	addi sp, sp, 4
+	
+	br PUSH_BUTTONS_ISR_END
+	
+GPIO_1_ISR: #LEGO
+#if here means safety sensor got triggered
+#halt, update floor
+	movia  r8, ADDR_JP1     	        # init pointer to JP1
+	movia  r9, 0xffffffff        #turning everything off and storing in data register
+	stwio  r9, 0(r8)
+
+	#update floor, poll timer to know snapshot value -> clean/safety triggered  
+	addi sp, sp, -4
+	stw ra, 104(sp)	2
+	
+	call CHECK_TIMER_SNAPSHOT
+	
+    ldw ra, 104(sp)	
+	addi sp, sp, 4
+	
+	br GPIO_1_ISR_END
+	
+TIMER_0_ISR_CLEAN:
+	#update to PB value
+	br TIMER_0_ISR_END
+	
+TIMER_0_ISR_SAFETY_TRIG:
+	
+	br TIMER_0_ISR_END
+	
+TIMER_0_ISR_END:
+	# ack interrupt
+	movia	r16, TIMER_0_BASE
+	stwio	r0, 0(r16)
+	br	END_ISR
+	
+PUSH_BUTTONS_ISR_END:
+	# ack interrupt
+	movia	r16, PUSH_BUTTONS_BASE
+	movi	r1, 1
+	stwio	r1, 12(r16)
+	br	END_ISR
+	
+GPIO_1_ISR_END:
+	# ack interrupt
+	movia	r16, ADDR_JP1
+	movi	r1, 1
+	stwio	r1, 12(r16)
+	br timer_check
+	
+END_ISR:
+	ldw		ea, 0(sp)
+	ldw		et, 8(sp)	#which
+	wrctl	ctl1, et	#which
+	ldw		et, 4(sp)	#which
+	ldw		r2, 12(sp)
+	ldw		r3, 16(sp)
+	ldw		r4, 20(sp)
+	ldw		r5, 24(sp)
+	ldw		r6, 28(sp)
+	ldw		r7, 32(sp)
+	ldw		r8, 36(sp)
+	ldw		r9, 40(sp)
+	ldw		r10, 44(sp)
+	ldw		r11, 48(sp)
+	ldw		r12, 52(sp)
+	ldw		r13, 56(sp)
+	ldw		r14, 60(sp)
+	ldw		r15, 64(sp)
+	ldw		ra, 68(sp)
+	ldw		r16, 72(sp)
+	ldw		r17, 76(sp)
+	ldw		r18, 80(sp)
+	ldw		r19, 84(sp)
+	ldw		r20, 88(sp)
+	ldw		r21, 92(sp)
+	ldw		r22, 96(sp)
+	ldw		r23, 100(sp)
+	addi	sp, sp, 104
+	addi	ea, ea, -4
+	eret
+	
+#start program
+.text
+	.global _start
+
+_start:
+	#init stack - auto?
+	#orhi sp, zero, 0x400
+	#addi sp, sp, 0x0
+	#nor sp, sp, sp
+	#ori sp, sp, 0x7
+	#nor sp, sp, sp
+		
+	#set up initial 
+	movi r20, 0x2
+	movi r21, 0x0
+	movi r22, 0x0000
+	movi r23, 0x0
+
+#START SETUP LEGO ---------------------------------------------------------------------------------------------------	 GPIO_1_ISR
+	#init the LEGO controller
+	movia  r8, ADDR_JP1     	        # init pointer to JP1
+	
+	#load threshold values -> 00000111111101010101011111111111)2 = (7F557FF)16 = 7F557FFh
+	movia  r9, 0x07f557ff       # set motor,threshold and sensors bits to output, set state and sensor valid bits to inputs
+    stwio  r9, 4(r8)	#init DIR
+
+# load sensor0 threshold value 1 and enable sensor0 - light sensor
+ 
+   movia  r9,  0xF8BFDFFF       # set motors off enable threshold load sensor 0
+   stwio  r9,  0(r8)            # store value into threshold register
+
+# load sensor1 threshold value 1 and enable sensor1 - light sensor
+ 
+   movia  r9,  0xF8BFBFFF       # set motors off enable threshold load sensor 1
+   stwio  r9,  0(r8)            # store value into threshold register
+
+# load sensor2 threshold value F and enable sensor2 - touch sensor
+ 
+   movia  r9,  0xFFBF7FFF       # set motors off enable threshold load sensor 2
+   stwio  r9,  0(r8)            # store value into threshold register   
+	
+# load sensor3 threshold value F and enable sensor3 - touch sensor
+ 
+   movia  r9,  0xFFBEFFFF       # set motors off enable threshold load sensor 3
+   stwio  r9,  0(r8)            # store value into threshold register
+
+# disable threshold register and enable state mode
+  
+    movia  r9,  0xfadfffff      # keep threshold value same in case update occurs before state mode is enabled- wtf?
+    stwio  r9,  0(r8)
+
+	movia  r9, 0xffffffff        #turning everything off and storing in data register
+	stwio  r9, 0(r8)
+				
+#END SETUP LEGO ---------------------------------------------------------------------------------------------------	GPIO_1_ISR
+	
+	# set up PB_ISR
+	movia r2,PUSH_BUTTONS_BASE
+    movia r3,0xF	  # Enable interrrupt mask = 1111
+    stwio r3,8(r2)  # Enable interrupts on pushbuttons 1,2,3 and 4
+    stwio r3,12(r2) # Clear edge capture register to prevent unexpected interrupt
+	
+	#set-up interrupts globally
+	movi r18, 0x803	#to enable IRQ interrupts 0,1,11 for timer 0 and pushbuttons and gpio 1 , respectively -> bits 1,2,12
+	wrctl ctl3, r18
+	movi r18, 1
+	wrctl ctl0, r18 #set PIE bit
+
+#start:
+	#main loop
+loop:
+	br loop
+	
+TIMER_INIT_ISR:	# setup timer and enable interrupt and continuing
+					# r4 = # of clock cycles
+	# prologue
+	addi	sp, sp, -8
+	stw		r21, 0(sp)
+	stw		r22, 4(sp)
+	
+	# reset timer
+	movia	r21, TIMER0_BASE
+	movi	r22, 0b1000
+	stwio	r22, 4(r21)
+	stwio	r0, 0(r21)
+	# set period and start
+	andi	r22, r4, 0xFFFF
+	stwio	r22, 8(r21)
+	srli	r22, r4, 16
+	stwio	r22, 12(r21)
+	movi	r22, 0b0101#start, not cont, en inter
+	stwio	r22, 4(r21)
+	
+	# epilogue
+	ldw		r21, 0(sp)
+	ldw		r22, 4(sp)
+	addi	sp, sp, 8
+	ret
+	
+LEGO_INIT_ISR: #start moving too
+	# prologue
+	addi	sp, sp, -8
+	stw		r8, 0(sp)
+	stw		r12, 4(sp)
+	
+	#start moving
+	stwio	 r20, 0(r8)
+	
+	# enable interrupts
+	movia  r8, ADDR_JP1     	 # init pointer to JP1
+    movia  r12, 0x78000000       # enable interrupts on sensor 3,2,1,0
+    stwio  r12, 8(r8)
+	
+	# epilogue
+	ldw		r21, 0(sp)
+	ldw		r22, 4(sp)
+	addi	sp, sp, 8
+	ret
+	
+CHECK_TIMER_SNAPSHOT:
+#this block of code takes snapshot of the remaining time
+	# prologue
+	addi	sp, sp, -12
+	stw		r3, 0(sp)
+	stw		r7, 4(sp)
+	stw		r23, 8(sp)
+
+    movia r7, TIMER_0_BASE       # r7 contains the base address for the timer 
+    stwio r0,16(r7)              # Tell Timer to take a snapshot of the timer 
+    ldwio r3,16(r7)              # Read snapshot bits 0..15 
+    ldwio r23,20(r7)             # Read snapshot bits 16...31 
+    slli  r23,r23,16		     # Shift left logically
+    or    r23,r23,r3             # Combine bits 0..15 and 16...31 into one register
+    #r23 holds the value
+	
+	# epilogue
+	ldw		r3, 0(sp)
+	ldw		r7, 4(sp)
+	ldw		r23, 8(sp)
+	addi	sp, sp, 12
+	ret
