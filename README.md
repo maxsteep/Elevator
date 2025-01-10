@@ -39,7 +39,7 @@ I developed a safety-driven elevator prototype underpinned by a sophisticated as
 
 Safety features suspend device operation whenever a sensor interrupt is raised or the timer expires. If a sensor-based interrupt halts the system, only the “safety off” button remains active, enabling completion of the elevator run for the timer’s remaining interval and then restoring normal floor-selection functionality upon arrival. This design ensures the system cannot be broken by any sequence or timing of button presses: robust assembly logic governs the enabling and disabling of all signals.
 
-A VGA display provides real-time feedback, indicating the elevator’s floor and any active safety alerts. I intentionally opted for concise, static updates rather than continuous animation, focusing on clarity over unnecessary visual complexity. Touch-based LEGO sensors provide reliable safety input, as my experiments with light-based sensors revealed them to be unstable in non-laboratory conditions and therefore unsuited to a robust application.
+A VGA display provides real-time feedback, indicating the elevator’s floor and any active safety alerts. I intentionally opted for concise, static updates rather than continuous animation, focusing on clarity over unnecessary visual complexity. Touch-based sensors provide reliable safety input, as my experiments with light-based sensors revealed them to be unstable in non-laboratory conditions and therefore unsuited to a robust application.
 
 I plan to add additional features as time permits, but the fundamental goals—both the original proposal and the revised specification’s added complexity—have already been fully realized. Despite minimal and often unclear documentation, along with the intrinsic complexity of managing multiple interrupts, I successfully integrated, validated, and made the system exceptionally tolerant of user error and unexpected inputs.
 
@@ -62,8 +62,8 @@ I plan to add additional features as time permits, but the fundamental goals—b
 ## Getting Started
 ### Prerequisites
 - **FPGA Development Tools**: Quartus Prime and Nios II IDE
-- **Programming Language**: Verilog/VHDL and C (for Nios II)
-- **Hardware**: De-SoC FPGA board
+- **Programming Language**: Verilog and C (for Nios II)
+- **Hardware**: DE1-SoC FPGA board
 
 ### Installation
 1. Clone the repository:
