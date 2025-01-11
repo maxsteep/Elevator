@@ -46,7 +46,7 @@ I plan to add additional features as time permits, but the fundamental goals—b
 ### Block Diagram
 ```text
 +-------------------+
-|    User Input     | ←  ← ↑
+|       User        | ←  ← ↑
 +-------------------+        
           ↓                ↑
 +-------------------+   
