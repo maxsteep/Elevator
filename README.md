@@ -45,6 +45,7 @@ I plan to add additional features as time permits, but the fundamental goals—b
 
 ### Matplotlib Chart
 _A Matplotlib Chart showcasing sturcutred overview of the project._
+
 ![Matplotlib Chart Screenshot](Assets/scheme.png)
 
 
