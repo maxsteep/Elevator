@@ -43,25 +43,10 @@ A VGA display provides real-time feedback, indicating the elevator’s floor and
 
 I plan to add additional features as time permits, but the fundamental goals—both the original proposal and the revised specification’s added complexity—have already been fully realized. Despite minimal and often unclear documentation, along with the intrinsic complexity of managing multiple interrupts, I successfully integrated, validated, and made the system exceptionally tolerant of user error and unexpected inputs.
 
-### Block Diagram
-```text
-+-------------------+
-|       User        | ←  ← ↑
-+-------------------+        
-          ↓                ↑
-+-------------------+   
-|   PS/2 keyboard   |      ↑
-+-------------------+   
-          ↓                ↑
-+-------------------+   +-----+
-|     Nios II       | → | VGA |
-| FPGA Controller   |   +-----+
-+-------------------+
-   ↓              ↑
-+-----+        +----------------+
-|Motor|        | Safety Sensors |
-+-----+        +----------------+
-```
+### Matplotlib Chart
+_A Matplotlib Chart showcasing sturcutred overview of the project._
+![Matplotlib Chart Screenshot](Assets/scheme.png)
+
 
 ## Getting Started
 ### Prerequisites
